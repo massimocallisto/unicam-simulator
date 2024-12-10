@@ -41,7 +41,7 @@ if __name__ == "__main__":
             "MAX": 40
         },
         "data_model": {
-            "ref": "${ref}",
+            "ref": "${id}",
             "tz": "${current_time}",
             "temperature": "${temperature}",
             "unit": "°"

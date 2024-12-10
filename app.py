@@ -17,6 +17,7 @@ class App:
         self.configured = False
         self.interval = 1
         self.max_iterations = -1
+        self.iteration = -1
 
         if config:
             self.configure()
@@ -45,14 +46,14 @@ class App:
             self.configure()
 
         try:
-            iteration = 1
+            self.iteration = 1
             while True:
                 self.run()
 
                 time.sleep(self.interval)
 
-                iteration = self.get_iteration(iteration)
-                if iteration is None:
+                self.iteration = self.get_iteration(self.iteration + 1)
+                if self.iteration is None:
                     return
 
         except KeyboardInterrupt:
@@ -61,13 +62,12 @@ class App:
     def run(self):
         random_text = ''.join(random.choices(string.ascii_uppercase + string.ascii_lowercase, k=5))
 
-        output_data = self.set_output(locals())
+        output_data = self.set_output(locals(), )
 
         # Print the output JSON
         print(json.dumps(output_data))
 
     def get_iteration(self, iteration):
-        iteration = iteration + 1
         if self.max_iterations != -1 and iteration > self.max_iterations:
             return None
         return iteration
@@ -115,4 +115,4 @@ if __name__ == "__main__":
     }
 
     app = App(config)
-    app.run()
+    app.execute()
