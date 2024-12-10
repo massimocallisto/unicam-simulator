@@ -1,97 +1,106 @@
 import unittest
-from unittest.mock import patch
-from io import StringIO
+from unittest.mock import patch, MagicMock
+import time
 import json
-import app
-from datetime import datetime
+from app import App
+from functions import collect_output_keys, get_variable_value, replace_placeholder
 
 
-class TestApp(unittest.TestCase):
-
+class TestFunctions(unittest.TestCase):
     def test_collect_output_keys(self):
         data_model = {
-            "temperature": "${temperature}",
-            "humidity": "${humidity} ${unit}",
+            "simple_message": "${random_text}",
             "nested": {
-                "pressure": "${pressure} ${altitude}",
-                "info": "static_value"
+                "iteration": "${iteration}",
+                "info": "constant_value"
             },
-            "array": ["${wind_speed}", "constant"]
+            "array": ["${id}", "${another_key}"]
         }
-        expected_keys = ["temperature", "humidity", "unit", "pressure", "altitude", "wind_speed"]
-        result = app.collect_output_keys(data_model)
-        self.assertCountEqual(result, expected_keys)
+        expected_keys = ["random_text", "iteration", "id", "another_key"]
+        self.assertCountEqual(collect_output_keys(data_model), expected_keys)
 
     def test_get_variable_value_local_scope(self):
         local_scope = {"temperature": 25, "humidity": 70}
-        result = app.get_variable_value("temperature", local_scope)
-        self.assertEqual(result, 25)
+        self.assertEqual(get_variable_value("temperature", local_scope), 25)
+        self.assertEqual(get_variable_value("humidity", local_scope), 70)
 
-    # def test_get_variable_value_global_scope(self):
-    #     with patch.dict("app.globals", {"pressure": 1013}):
-    #         result = app.get_variable_value("pressure")
-    #         self.assertEqual(result, 1013)
+    def test_get_variable_value_additional_map(self):
+        additional_map = {"iteration": 5, "id": "test-id"}
+        self.assertEqual(get_variable_value("iteration", None, additional_map), 5)
+        self.assertEqual(get_variable_value("id", None, additional_map), "test-id")
 
     def test_get_variable_value_not_found(self):
-        result = app.get_variable_value("nonexistent")
-        self.assertIsNone(result)
+        self.assertIsNone(get_variable_value("nonexistent"))
 
-    def test_replace_placeholder_dict(self):
+    def test_replace_placeholder(self):
         data = {
-            "temperature": "${temperature}",
-            "humidity": "${humidity}"
+            "simple_message": "${random_text}",
+            "nested": {"iteration": "${iteration}"}
         }
-        result = app.replace_placeholder(data, "${temperature}", 25)
+        replaced_data = replace_placeholder(data, "${random_text}", "HelloWorld")
         expected = {
-            "temperature": 25,
-            "humidity": "${humidity}"
+            "simple_message": "HelloWorld",
+            "nested": {"iteration": "${iteration}"}
         }
-        self.assertEqual(result, expected)
+        self.assertEqual(replaced_data, expected)
 
-    def test_replace_placeholder_nested(self):
-        data = {
-            "nested": {
-                "temperature": "${temperature}",
-                "info": "constant"
-            }
-        }
-        result = app.replace_placeholder(data, "${temperature}", 30)
-        data["nested"]["temperature"] = 30
-        expected = {
-            "nested": {
-                "temperature": 30,
-                "info": "constant"
-            }
-        }
-        self.assertEqual(result, expected)
 
-    def test_run_function(self):
-        config = {
+class TestApp(unittest.TestCase):
+    def setUp(self):
+        self.config = {
+            "id": "test-id",
             "params": {
-                "TZ": "UTC",
                 "T": 1,
-                "MIN": -10,
-                "MAX": 10
+                "max_iterations": 2
             },
             "data_model": {
-                "ref": "${id}",
-                "tz": "${current_time}",
-                "temperature": "${temperature}"
+                "simple_message": "${random_text}",
+                "iteration": "${iteration}",
+                "ref": "${id}"
             }
         }
-        id = "jzp://edv.0001"
-        with patch("time.sleep", return_value=None), patch("builtins.print") as mock_print:
-            with patch("app.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
-                mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
-                app.run(id, config)
-                mock_print.assert_called()  # Ensure print was called
+        self.app = App(self.config)
 
-    def test_replace_placeholder_list(self):
-        data = ["${temperature}", "constant"]
-        result = app.replace_placeholder(data, "${temperature}", 25)
-        expected = [25, "constant"]
-        self.assertEqual(result, expected)
+    def test_configure(self):
+        self.app.configure()
+        self.assertEqual(self.app.params["T"], 1)
+        self.assertEqual(self.app.params["max_iterations"], 2)
+        self.assertEqual(self.app.id, "test-id")
+        alist = ["random_text", "iteration", "id"]
+        alist.sort()
+        self.assertListEqual(self.app.output_keys, alist)
+
+    @patch("time.sleep", return_value=None)
+    @patch("builtins.print")
+    def test_execute(self, mock_print, _):
+        self.app.configure()
+        self.app.execute()
+        self.assertEqual(mock_print.call_count, 2)  # max_iterations = 2
+
+    def test_run(self):
+        self.app.configure()
+        with patch("builtins.print") as mock_print:
+            self.app.run()
+            output = json.loads(mock_print.call_args[0][0])  # Parse the printed JSON
+            self.assertIn("simple_message", output)
+            self.assertIn("iteration", output)
+            self.assertIn("ref", output)
+
+    def test_set_output(self):
+        self.app.configure()
+        local_vars = {"random_text": "abc123", "iteration": 1}
+        output = self.app.set_output(local_vars)
+        self.assertEqual(output["simple_message"], "abc123")
+        self.assertEqual(output["iteration"], 1)
+        self.assertEqual(output["ref"], "test-id")
+
+    def test_get_param(self):
+        self.assertEqual(self.app.get_param("T"), 1)
+        self.assertEqual(self.app.get_param("max_iterations"), 2)
+
+    def test_get_config(self):
+        self.assertEqual(self.app.get_config("id"), "test-id")
+        self.assertIsNone(self.app.get_config("nonexistent_param"))
 
 
 if __name__ == "__main__":

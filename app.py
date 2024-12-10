@@ -1,145 +1,118 @@
 import json
-import numbers
 import time
 import random
-from datetime import datetime, timedelta
-import pytz
-import re
+import string
+import uuid
+
+from functions import *
 
 
-def run(ref, config):
-    # Parse the input JSON configuration
-    params = config['params']
-    data_model = config['data_model']
+class App:
+    def __init__(self, config=None):
+        self.id = str(uuid.uuid4())
+        self.params = None
+        self.data_model = None
+        self.output_keys = []
+        self.config = config
+        self.configured = False
+        self.interval = 1
+        self.max_iterations = -1
 
-    # Extract parameters
-    tz = pytz.timezone(params['TZ'])
-    interval = params['T']
-    min_temp = params['MIN']
-    max_temp = params['MAX']
-    output_keys = collect_output_keys(data_model)#params['output_keys']
+        if config:
+            self.configure()
 
-    # Initialize the start time
-    current_time = datetime.now(tz)
+    def configure(self):
+        """
+        Initialize internal parameters from the given config.
+        """
+        if self.config:
+            self.params = self.config['params']
+            self.data_model = self.config['data_model']
+            self.output_keys = collect_output_keys(self.data_model)
 
-    try:
-        while True:
-            # Generate a random temperature
-            temperature = random.uniform(min_temp, max_temp)
+            if "id" in self.config:
+                self.id = self.config['id']
 
-            # Create a copy of the data_model to modify
-            output = json.loads(json.dumps(data_model))
+            if "T" in self.params:
+                self.interval = self.params['T']
+            if "max_iterations" in self.params:
+                self.max_iterations = self.params['max_iterations']
 
-            # Replace placeholders in the data_model
-            for key in output_keys:
-                current_value = get_variable_value(key, locals())
-                if current_value is None:
-                    continue
-                output = replace_placeholder(output, f"${{{key}}}", current_value)
+            self.configured = True
 
-            # Print the output JSON
-            print(json.dumps(output))
+    def execute(self):
+        if not self.configured:
+            self.configure()
 
-            # Wait for the specified interval
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        print("Simulation stopped.")
+        try:
+            iteration = 1
+            while True:
+                self.run()
 
+                time.sleep(self.interval)
 
-def collect_output_keys(data_model):
-    """
-    Recursively traverse the data_model and collect all values that start with "${" and end with "}".
-    Handles multiple placeholders in the same string.
+                iteration = self.get_iteration(iteration)
+                if iteration is None:
+                    return
 
-    Args:
-        data_model (dict or list): The data_model to search.
+        except KeyboardInterrupt:
+            print("Simulation stopped.")
 
-    Returns:
-        list: A list of unique output keys extracted from the data_model.
-    """
-    output_keys = set()  # Use a set to avoid duplicates
+    def run(self):
+        random_text = ''.join(random.choices(string.ascii_uppercase + string.ascii_lowercase, k=5))
 
-    def traverse(data):
-        if isinstance(data, dict):
-            for value in data.values():
-                traverse(value)
-        elif isinstance(data, list):
-            for item in data:
-                traverse(item)
-        elif isinstance(data, str):
-            # Find all "${...}" patterns in the string
-            matches = re.findall(r"\${(.*?)}", data)
-            output_keys.update(matches)
+        output_data = self.set_output(locals())
 
-    traverse(data_model)
-    return list(output_keys)  # Convert the set back to a list
+        # Print the output JSON
+        print(json.dumps(output_data))
 
-def get_variable_value(var_name, local_scope=None):
-    """
-    Retrieve the value of a variable given its name as a string.
+    def get_iteration(self, iteration):
+        iteration = iteration + 1
+        if self.max_iterations != -1 and iteration > self.max_iterations:
+            return None
+        return iteration
 
-    Args:
-        var_name (str): The name of the variable to retrieve.
-        local_scope (dict, optional): A dictionary of local variables (e.g., locals()).
+    def set_output(self, local_vars=None):
+        # Prepare output data
+        output_data = json.loads(json.dumps(self.data_model))
 
-    Returns:
-        Any: The value of the variable if found.
+        # Replace placeholders in the data_model
+        for key in self.output_keys:
+            current_value = get_variable_value(key, local_vars, vars(self))
+            if current_value is None:
+                continue
+            output_data = replace_placeholder(output_data, f"${{{key}}}", current_value)
 
-    Raises:
-        NameError: If the variable does not exist in either scope.
-    """
-    # Check in the local scope first, if provided
-    if local_scope and var_name in local_scope:
-        return local_scope[var_name]
+        return output_data
 
-    # Check in the global scope
-    if var_name in globals():
-        return globals()[var_name]
+    def get_param(self, param_name):
+        return self._get_value(param_name, self.params)
 
-    # Raise an error if the variable does not exist
-    #raise NameError(f"Variable '{var_name}' is not defined in either the local or global scope.")
-    return None
+    def get_config(self, param_name):
+        return self._get_value(param_name, self.config)
 
-
-def replace_placeholder(data, placeholder, value):
-    if isinstance(data, dict):
-        for k, v in data.items():
-            if isinstance(v, str) and v == placeholder:
-                if isinstance(value, numbers.Number):
-                    data[k] = value
-                else:
-                    data[k] = str(value)
-        return data
-    elif isinstance(data, list):
-        for index, item in enumerate(data):
-            if not isinstance(item, str):
-                data[index] = replace_placeholder(item, placeholder, value)
-            elif item == placeholder:
-                if isinstance(value, numbers.Number):
-                    data[index] = value
-                else:
-                    data[index] = str(value)
-        return data
-    else:
-        return data
+    @staticmethod
+    def _get_value(val_name, config_map=None):
+        if config_map:
+            value = config_map[val_name] if val_name in config_map else None
+            return value
+        else:
+            return None
 
 
 if __name__ == "__main__":
-    # Example configuration
-    ref = "jzp://edv.0001"
-
     config = {
+        "id": "optional id generator",
         "params": {
-            "TZ": "UTC",
-            "T": 5,
-            "MIN": -10,
-            "MAX": 40
+            "T": 2,
+            "max_iterations": 3
         },
         "data_model": {
-            "ref": "${ref}",
-            "tz": "${current_time}",
-            "temperature": "${temperature}",
-            "unit" : "°"
+            "simple_message": "${random_text}",
+            "iteration": "${iteration}",
+            "ref": "${id}"
         }
     }
-    run(ref, config)
+
+    app = App(config)
+    app.run()
