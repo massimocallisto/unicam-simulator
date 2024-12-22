@@ -3,6 +3,7 @@ import pytz
 from datetime import datetime
 import random
 import json
+import sys
 
 
 class Temperature(App):
@@ -27,13 +28,13 @@ class Temperature(App):
         # Create a copy of the data_model to modify
         output_data = self.set_output(locals())
 
-        # Print the output JSON
-        print(json.dumps(output_data))
-
+        self.kafka_producer.produce(topic=self.kafka_topic,
+                                    value=json.dumps(output_data).encode('utf-8'))
+        self.kafka_producer.flush()
 
 if __name__ == "__main__":
     config = {
-        "id": "jzp://edv.0001",
+        "id": "mock temperature data generator",
         "params": {
             "TZ": "UTC",
             "T": 5,
@@ -48,5 +49,14 @@ if __name__ == "__main__":
         }
     }
 
-    temp_generator = Temperature(config)
-    temp_generator.execute()
+    try:
+        temp_generator = Temperature(config)
+        temp_generator.execute()
+
+    except KeyboardInterrupt:
+        print('Simulation stopped manually')
+        sys.exit(0)
+
+    except Exception as e:
+        print(f'Simulation crashed due to {e}')
+        sys.exit(1)

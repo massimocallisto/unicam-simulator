@@ -10,5 +10,7 @@ COPY . /app
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+ENV KAFKA_BOOTSTRAP_SERVERS=kafka:9093 KAFKA_TOPIC=sample_data
+
 # Set the default entry point
 CMD ["python", "-u", "app.py"]

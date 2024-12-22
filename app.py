@@ -3,21 +3,26 @@ import time
 import random
 import string
 import uuid
+import os
+import sys
+
+from confluent_kafka import Producer
 
 from functions import *
-
 
 class App:
     def __init__(self, config=None):
         self.id = str(uuid.uuid4())
         self.params = None
         self.data_model = None
+        # integration of kafka producer, kafka topic and kafka bootstrap servers
+        self.kafka_producer = None
+        self.kafka_topic = None
+        self.kafka_bootstrap_servers = None
         self.output_keys = []
         self.config = config
         self.configured = False
         self.interval = 1
-        self.max_iterations = -1
-        self.iteration = -1
 
         if config:
             self.configure()
@@ -31,46 +36,36 @@ class App:
             self.data_model = self.config['data_model']
             self.output_keys = collect_output_keys(self.data_model)
 
+            # load environment variables necessary for Kafka accessability
+            self.kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+            self.kafka_topic = os.getenv("KAFKA_TOPIC")
+            # initialize Kafka Producer if environment variables loaded successfully
+            if self.kafka_bootstrap_servers and self.kafka_topic:
+                self.kafka_producer = Producer({'bootstrap.servers': self.kafka_bootstrap_servers})
+
             if "id" in self.config:
                 self.id = self.config['id']
 
             if "T" in self.params:
                 self.interval = self.params['T']
-            if "max_iterations" in self.params:
-                self.max_iterations = self.params['max_iterations']
 
             self.configured = True
 
     def execute(self):
         if not self.configured:
             self.configure()
-
-        try:
-            self.iteration = 1
-            while True:
-                self.run()
-
-                time.sleep(self.interval)
-
-                self.iteration = self.get_iteration(self.iteration + 1)
-                if self.iteration is None:
-                    return
-
-        except KeyboardInterrupt:
-            print("Simulation stopped.")
+        while True:
+            self.run()
+            time.sleep(self.interval)
 
     def run(self):
         random_text = ''.join(random.choices(string.ascii_uppercase + string.ascii_lowercase, k=5))
 
         output_data = self.set_output(locals(), )
 
-        # Print the output JSON
-        print(json.dumps(output_data))
-
-    def get_iteration(self, iteration):
-        if self.max_iterations != -1 and iteration > self.max_iterations:
-            return None
-        return iteration
+        self.kafka_producer.produce(topic=self.kafka_topic,
+                                    value=json.dumps(output_data).encode('utf-8'))
+        self.kafka_producer.flush()
 
     def set_output(self, local_vars=None):
         # Prepare output data
@@ -99,20 +94,25 @@ class App:
         else:
             return None
 
-
 if __name__ == "__main__":
     config = {
-        "id": "optional id generator",
+        "id": "mock data generator",
         "params": {
-            "T": 2,
-            "max_iterations": 3
+            "T": 2
         },
         "data_model": {
             "simple_message": "${random_text}",
-            "iteration": "${iteration}",
             "ref": "${id}"
         }
     }
+    try:
+        app = App(config)
+        app.execute()
 
-    app = App(config)
-    app.execute()
+    except KeyboardInterrupt:
+        print('Simulation stopped manually')
+        sys.exit(0)
+
+    except Exception as e:
+        print(f'Simulation crashed due to {e}')
+        sys.exit
