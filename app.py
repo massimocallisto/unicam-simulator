@@ -37,7 +37,7 @@ class App:
             self.output_keys = collect_output_keys(self.data_model)
 
             # load environment variables necessary for Kafka accessability
-            self.kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+            self.kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS_DOCKER")
             self.kafka_topic = os.getenv("KAFKA_TOPIC")
             # initialize Kafka Producer if environment variables loaded successfully
             if self.kafka_bootstrap_servers and self.kafka_topic:
