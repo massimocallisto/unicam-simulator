@@ -2,9 +2,9 @@
 
 echo "Pushing the docker image.."
 
-BASE_NAME=massimocallisto
-IMAGE_NAME=unicam-data-simulator-temperature
-TAG=0.0.1
+BASE_NAME=christianbieri
+IMAGE_NAME=data-simulator-temperature
+TAG=1.0.0
 
 CMD="docker push $BASE_NAME/$IMAGE_NAME:$TAG"
 
