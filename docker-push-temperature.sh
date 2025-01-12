@@ -4,7 +4,7 @@ echo "Pushing the docker image.."
 
 BASE_NAME=christianbieri
 IMAGE_NAME=data-simulator-temperature
-TAG=1.0.0
+TAG=1.0.1
 
 CMD="docker push $BASE_NAME/$IMAGE_NAME:$TAG"
 
